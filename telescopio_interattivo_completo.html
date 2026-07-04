@@ -94,7 +94,7 @@
                 <span>Spessore Cristalli (cm)</span>
                 <span id="val-spessore" class="font-bold text-white">10</span>
             </label>
-            <input type="range" id="slider-spessore" min="2" max="20" value="10" step="0.5">
+            <input type="range" id="slider-spessore" min="2" max="20" value="10" step="0.1">
         </div>
         
         <div class="w-full">
@@ -102,7 +102,7 @@
                 <span>Distanza tra cristalli (cm)</span>
                 <span id="val-distanza" class="font-bold text-white">7</span>
             </label>
-            <input type="range" id="slider-distanza" min="0" max="30" value="7" step="0.5">
+            <input type="range" id="slider-distanza" min="0" max="30" value="7" step="0.1">
         </div>
         
         <div class="w-full">
@@ -110,16 +110,16 @@
                 <span>Raggio Cristalli (cm)</span>
                 <span id="val-raggio" class="font-bold text-white">5</span>
             </label>
-            <input type="range" id="slider-raggio" min="2" max="15" value="5" step="0.5">
+            <input type="range" id="slider-raggio" min="2" max="15" value="5" step="0.1">
         </div>
     </div>
 
     <script>
         // --- 1. STATO DELL'APP ---
         let params = {
-            spessore: 10,
-            distanza: 7,
-            raggio: 5
+            spessore: 7.6,
+            distanza: 7.1,
+            raggio: 4.1
         };
         
         let stats = {
