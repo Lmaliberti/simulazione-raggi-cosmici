@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telescopio a Raggi Cosmici - Simulazione</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Inter', sans-serif; color: white; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        /* Stile del cruscotto (Dashboard) in sovrimpressione */
+        #dashboard {
+            position: absolute; top: 20px; left: 20px; z-index: 10;
+            background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px; padding: 20px; width: 320px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        
+        /* Stile dei controlli (Slider) in sovrimpressione */
+        #controls {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10;
+            background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px; padding: 20px; width: 90%; max-width: 800px;
+            display: flex; gap: 20px; justify-content: space-between; align-items: center;
+        }
+
+        .stat-box { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 8px; }
+        .stat-value { font-family: monospace; font-size: 1.5rem; font-weight: bold; }
+        
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; background: transparent; margin-top: 8px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #3b82f6; cursor: pointer; margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px;
+        }
+        
+        /* Colori dinamici per i contatori */
+        .color-coincidenza { color: #10b981; } /* Smeraldo */
+        .color-singolo { color: #3b82f6; }     /* Blu */
+        .color-miss { color: #64748b; }        /* Grigio */
+    </style>
+</head>
+<body>
+
+    <!-- Contenitore 3D -->
+    <div id="canvas-container"></div>
+
+    <!-- Dashboard delle Statistiche -->
+    <div id="dashboard">
+        <h2 class="text-xl font-bold mb-4 text-white">Rilevatore NaI</h2>
+        
+        <div class="stat-box border-l-4 border-slate-500">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Particelle Simulate</div>
+            <div id="stat-totali" class="stat-value color-miss">0</div>
+        </div>
+        
+        <div class="stat-box border-l-4 border-blue-500">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Hit Cristallo TOP</div>
+            <div id="stat-top" class="stat-value color-singolo">0</div>
+        </div>
+        
+        <div class="stat-box border-l-4 border-blue-500">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Hit Cristallo BOTTOM</div>
+            <div id="stat-bottom" class="stat-value color-singolo">0</div>
+        </div>
+        
+        <div class="stat-box border-l-4 border-emerald-500 bg-emerald-900/20">
+            <div class="text-xs text-emerald-400 uppercase tracking-wider font-bold">Coincidenze (Accettanza)</div>
+            <div class="flex items-end justify-between">
+                <div id="stat-coincidenze" class="stat-value color-coincidenza">0</div>
+                <div id="stat-percentuale" class="text-emerald-400 font-bold mb-1">0.00%</div>
+            </div>
+        </div>
+        
+        <button onclick="resetStats()" class="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded transition duration-200">
+            Azzera Contatori
+        </button>
+    </div>
+
+    <!-- Controlli Slider -->
+    <div id="controls" class="flex-col md:flex-row">
+        <div class="w-full">
+            <label class="flex justify-between text-sm font-medium text-slate-300">
+                <span>Spessore Cristalli (cm)</span>
+                <span id="val-spessore" class="font-bold text-white">10</span>
+            </label>
+            <input type="range" id="slider-spessore" min="2" max="20" value="10" step="0.5">
+        </div>
+        
+        <div class="w-full">
+            <label class="flex justify-between text-sm font-medium text-slate-300">
+                <span>Distanza tra cristalli (cm)</span>
+                <span id="val-distanza" class="font-bold text-white">7</span>
+            </label>
+            <input type="range" id="slider-distanza" min="0" max="30" value="7" step="0.5">
+        </div>
+        
+        <div class="w-full">
+            <label class="flex justify-between text-sm font-medium text-slate-300">
+                <span>Raggio Cristalli (cm)</span>
+                <span id="val-raggio" class="font-bold text-white">5</span>
+            </label>
+            <input type="range" id="slider-raggio" min="2" max="15" value="5" step="0.5">
+        </div>
+    </div>
+
+    <script>
+        // --- 1. STATO DELL'APP ---
+        let params = {
+            spessore: 10,
+            distanza: 7,
+            raggio: 5
+        };
+        
+        let stats = {
+            totali: 0,
+            hitTop: 0,
+            hitBottom: 0,
+            coincidenze: 0
+        };
+
+        // Liste per gestire la vita dei raggi a schermo
+        let activeRays = [];
+
+        // Elementi DOM
+        const elTotali = document.getElementById('stat-totali');
+        const elTop = document.getElementById('stat-top');
+        const elBottom = document.getElementById('stat-bottom');
+        const elCoincidenze = document.getElementById('stat-coincidenze');
+        const elPercentuale = document.getElementById('stat-percentuale');
+
+        // Setup Sliders
+        ['spessore', 'distanza', 'raggio'].forEach(key => {
+            const slider = document.getElementById(`slider-${key}`);
+            const label = document.getElementById(`val-${key}`);
+            slider.addEventListener('input', (e) => {
+                params[key] = parseFloat(e.target.value);
+                label.textContent = params[key];
+                updateGeometries();
+                resetStats(); // Resetta i conteggi quando si cambia la geometria
+            });
+        });
+
+        function resetStats() {
+            stats.totali = 0; stats.hitTop = 0; stats.hitBottom = 0; stats.coincidenze = 0;
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            elTotali.textContent = stats.totali;
+            elTop.textContent = stats.hitTop;
+            elBottom.textContent = stats.hitBottom;
+            elCoincidenze.textContent = stats.coincidenze;
+            const perc = stats.totali > 0 ? ((stats.coincidenze / stats.totali) * 100).toFixed(2) : "0.00";
+            elPercentuale.textContent = perc + "%";
+        }
+
+        // --- 2. SETUP THREE.JS ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x0f172a, 0.005);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(40, 30, 60);
+        camera.up.set(0, 0, 1); // Asse Z verso l'alto
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 15);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Luci
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, -20, 50);
+        scene.add(dirLight);
+
+        // --- Creazione Materiali e Geometrie... ---
+        // Materiale cristalli NaI (vetroso, traslucido)
+        const crystalMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x94a3b8, // Grigio argenteo
+            metalness: 0.1,
+            roughness: 0.2,
+            transparent: true,
+            opacity: 0.3,
+            transmission: 0.5,
+            side: THREE.DoubleSide
+        });
+
+        // Bordo visivo per i cristalli
+        const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5 });
+
+        // Gruppi per i cilindri (contengono mesh solida + bordi)
+        const topCylinderGroup = new THREE.Group();
+        const bottomCylinderGroup = new THREE.Group();
+        scene.add(topCylinderGroup);
+        scene.add(bottomCylinderGroup);
+
+        let topMesh, bottomMesh, topEdges, bottomEdges;
+
+        // Piano di generazione (solo visivo)
+        const genPlaneGeom = new THREE.PlaneGeometry(60, 60);
+        const genPlaneMat = new THREE.MeshBasicMaterial({ 
+            color: 0x334155, wireframe: true, transparent: true, opacity: 0.2 
+        });
+        const genPlane = new THREE.Mesh(genPlaneGeom, genPlaneMat);
+        scene.add(genPlane);
+
+        // Griglia di base a Z=0
+        const gridHelper = new THREE.GridHelper(100, 20, 0x334155, 0x1e293b);
+        gridHelper.rotation.x = Math.PI / 2;
+        scene.add(gridHelper);
+
+        // Funzione per aggiornare le dimensioni dei cilindri
+        function updateGeometries() {
+            // Pulisci vecchie geometrie
+            if(topMesh) {
+                topMesh.geometry.dispose(); bottomMesh.geometry.dispose();
+                topEdges.geometry.dispose(); bottomEdges.geometry.dispose();
+                topCylinderGroup.clear(); bottomCylinderGroup.clear();
+            }
+
+            const r = params.raggio;
+            const h = params.spessore;
+            const d = params.distanza;
+
+            const geom = new THREE.CylinderGeometry(r, r, h, 32);
+            geom.rotateX(Math.PI / 2); // Allinea a Z
+
+            topMesh = new THREE.Mesh(geom, crystalMaterial);
+            bottomMesh = new THREE.Mesh(geom, crystalMaterial);
+
+            const edgesGeom = new THREE.EdgesGeometry(geom);
+            topEdges = new THREE.LineSegments(edgesGeom, edgeMaterial);
+            bottomEdges = new THREE.LineSegments(edgesGeom, edgeMaterial);
+
+            topCylinderGroup.add(topMesh); topCylinderGroup.add(topEdges);
+            bottomCylinderGroup.add(bottomMesh); bottomCylinderGroup.add(bottomEdges);
+
+            // Posizionamento Z
+            // Bottom: da Z=0 a Z=H (centro in H/2)
+            bottomCylinderGroup.position.z = h / 2;
+            
+            // Top: da Z=H+D a Z=2H+D (centro in H+D + H/2)
+            topCylinderGroup.position.z = h + d + h / 2;
+
+            // Piano di generazione sta un po' sopra il tutto
+            genPlane.position.z = (2 * h + d) + 10;
+        }
+
+        updateGeometries();
+
+        // --- Motore Fisico e Intersezione Volumi... ---
+        
+        // Funzione matematica per l'intersezione raggio - volume cilindrico
+        function checkVolumeIntersection(ox, oy, oz, dx, dy, dz, radius, zMin, zMax) {
+            // 1. Intersezione con il cilindro infinito (laterale)
+            const a = dx*dx + dy*dy;
+            const b = 2 * (ox*dx + oy*dy);
+            const c = ox*ox + oy*oy - radius*radius;
+            
+            const delta = b*b - 4*a*c;
+            
+            if (delta < 0) return false; // Manca completamente la colonna infinita
+
+            // Trova i tempi (t) di entrata e uscita dal cilindro infinito
+            const t1 = (-b - Math.sqrt(delta)) / (2*a);
+            const t2 = (-b + Math.sqrt(delta)) / (2*a);
+            
+            // Calcola le altezze (Z) in cui il raggio attraversa le pareti
+            const z1 = oz + t1 * dz;
+            const z2 = oz + t2 * dz;
+            
+            // Ordina le altezze
+            const z_hit_min = Math.min(z1, z2);
+            const z_hit_max = Math.max(z1, z2);
+            
+            // Condizione logica per attraversare il volume finito:
+            // L'intervallo di Z in cui il raggio è "dentro" il cilindro infinito
+            // deve sovrapporsi all'intervallo [zMin, zMax] del cristallo reale.
+            const overlap = (z_hit_max >= zMin) && (z_hit_min <= zMax);
+            
+            return overlap;
+        }
+
+        // --- Loop di Animazione e Generazione... ---
+        
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaT = clock.getDelta();
+            controls.update();
+
+            // Generazione Raggi Monte Carlo (Circa 1 ogni frame)
+            const r = params.raggio;
+            const h = params.spessore;
+            const d = params.distanza;
+
+            // Limiti Z dei due volumi
+            const Z1_min = 0, Z1_max = h;
+            const Z2_min = h + d, Z2_max = 2*h + d;
+
+            // Raggio del disco di generazione (deve essere abbastanza largo per non perdere raggi)
+            const r_gen = r + d + 2*h; 
+            
+            // Punto di origine sul disco di generazione
+            const u_r = Math.random();
+            const u_phi = Math.random();
+            const origin_r = r_gen * Math.sqrt(u_r);
+            const origin_phi = 2 * Math.PI * u_phi;
+            
+            const ox = origin_r * Math.cos(origin_phi);
+            const oy = origin_r * Math.sin(origin_phi);
+            const oz = genPlane.position.z;
+
+            // Direzione cos^2(theta)
+            const u_th = Math.random();
+            const theta = Math.acos(Math.pow(1 - u_th, 1/3));
+            const phi = Math.random() * 2 * Math.PI;
+
+            const dx = Math.sin(theta) * Math.cos(phi);
+            const dy = Math.sin(theta) * Math.sin(phi);
+            const dz = -Math.cos(theta); // Verso il basso
+
+            // Controlla intersezioni
+            const hitBottom = checkVolumeIntersection(ox, oy, oz, dx, dy, dz, r, Z1_min, Z1_max);
+            const hitTop = checkVolumeIntersection(ox, oy, oz, dx, dy, dz, r, Z2_min, Z2_max);
+
+            // Aggiorna Statistiche
+            stats.totali++;
+            if (hitTop) stats.hitTop++;
+            if (hitBottom) stats.hitBottom++;
+            
+            const isCoincidence = hitTop && hitBottom;
+            if (isCoincidence) stats.coincidenze++;
+
+            // Aggiorna UI ogni 5 frame per prestazioni
+            if (stats.totali % 5 === 0) updateDashboard();
+
+            // Calcolo colori visivi
+            let colorHex = 0x475569; // Slate 600 (Miss, colore base)
+            let opacity = 0.15;
+            let lineWidth = 1;
+
+            if (isCoincidence) {
+                colorHex = 0x10b981; // Emerald 500 (Coincidenza)
+                opacity = 1.0;
+            } else if (hitTop || hitBottom) {
+                colorHex = 0x3b82f6; // Blue 500 (Hit Singolo)
+                opacity = 0.4;
+            }
+
+            // Aggiungi alla scena 3D (disegna la linea)
+            // Filtra: non disegniamo tutti i "miss" per non appesantire la scena, solo una frazione
+            if (isCoincidence || hitTop || hitBottom || Math.random() < 0.05) {
+                const points = [];
+                points.push(new THREE.Vector3(ox, oy, oz));
+                // Prolunga il raggio ben oltre z=0
+                const t_end = (oz + 20) / Math.abs(dz); 
+                points.push(new THREE.Vector3(ox + dx*t_end, oy + dy*t_end, oz + dz*t_end));
+                
+                const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
+                const lineMat = new THREE.LineBasicMaterial({ 
+                    color: colorHex, transparent: true, opacity: opacity 
+                });
+                const line = new THREE.Line(lineGeom, lineMat);
+                scene.add(line);
+                
+                activeRays.push({ mesh: line, age: 0, lifeSpan: isCoincidence ? 1.5 : 0.5 });
+            }
+
+            // Gestione invecchiamento ed eliminazione dei vecchi raggi
+            for (let i = activeRays.length - 1; i >= 0; i--) {
+                const ray = activeRays[i];
+                ray.age += deltaT;
+                
+                if (ray.age >= ray.lifeSpan) {
+                    scene.remove(ray.mesh);
+                    ray.mesh.geometry.dispose();
+                    ray.mesh.material.dispose();
+                    activeRays.splice(i, 1);
+                } else {
+                    // Fade out graduale
+                    ray.mesh.material.opacity = (1 - (ray.age / ray.lifeSpan)) * (ray.lifeSpan === 1.5 ? 1 : 0.4);
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Gestione Resize Finestra
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Avvia!
+        animate();
+    </script>
+</body>
+</html>
